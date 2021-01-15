@@ -106,14 +106,14 @@ type of entry and more.
 ```
 0b########
   ||||||||
-  |||||||\\_ 0: File     1: Directory
-  ||||||\\__ 0:          1: Executable
-  |||||\\___ 0:          1: Writeable
-  ||||\\____ 0:          1: Readable
-  |||\\_____ 0: Visible  1: Hidden
-  ||\\______ 0: User     1: System
-  |\\_______ 0:          1:
-  \\________ 0:          1:
+  |||||||\_ 0: File     1: Directory
+  ||||||\__ 0:          1: Executable
+  |||||\___ 0:          1: Writeable
+  ||||\____ 0:          1: Readable
+  |||\_____ 0: Visible  1: Hidden
+  ||\______ 0: User     1: System
+  |\_______ 0:          1:
+  \________ 0:          1:
 ```
 
 ### Data on the disk
