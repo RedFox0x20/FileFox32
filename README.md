@@ -6,8 +6,8 @@ development and storage of all documentation and design choices. In addition all
 utilities for accessing the Filesystem on commonly used operating systems,
 primarily Linux and other systems.
 
-*Note: I do not run Operating Systems such as Windows, MacOS or BSD. If you
+_Note: I do not run Operating Systems such as Windows, MacOS or BSD. If you
 would like to contribute and create changes so that these systems are supported
 then I will introduce a method to do so further down the line. If you are
 reading this, please do not attempt to contribute changes at the current time,
-thank you.
+thank you._
