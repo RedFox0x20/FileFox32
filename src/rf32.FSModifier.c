@@ -77,6 +77,8 @@ unsigned char LoadRoot(void)
 
 int main(int argc, char **argv)
 {
+	ReadFile = NULL;
+	DriveFile = NULL;
 	int opt;
 	printf(
 			"sizeof(FSHEADER) = %i\n"
@@ -152,6 +154,13 @@ int main(int argc, char **argv)
 				break;
 		}
 	}
-
+	if (DriveFile != NULL)
+	{
+		fclose(DriveFile);
+	}
+	if (ReadFile != NULL)
+	{
+		fclose(ReadFile);
+	}
 	return 0;
 }
