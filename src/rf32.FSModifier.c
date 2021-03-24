@@ -358,6 +358,30 @@ int main(int argc, char **argv)
 				else
 				{
 					/* Detect if a file of the same name exists */
+					for (
+							int EntryID = 0;
+							EntryID < FILE_ENTRIES_PER_ROOT;
+							EntryID++)
+					{
+						FILE_ENTRY *Entry = &(Root.Root.Entries[EntryID]);
+						if (strncmp(optarg, Entry->Name, 10))
+						{
+							printf("File %s found, deleting!\n", optarg);
+							for (
+									unsigned int i = Entry->StartSector;
+									i < Entry->EndSector;
+									i++	)
+							{
+								SetSectorState(i, 0);
+							}
+							memset(Entry, 0, sizeof(FILE_ENTRY));
+							printf("\n");
+							WriteSectorMap();
+							printf("\n");
+							WriteRoot();
+							break;
+						}
+					}
 				}
 				break;
 			default:
