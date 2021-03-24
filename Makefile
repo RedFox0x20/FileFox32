@@ -9,4 +9,4 @@ rf32.fsmod:
 
 test: rf32.fsmod
 	sh -c "cd ../BootFox32/ && make"
-	./Build/rf32.fsmod -f ../BootFox32/Floppy.img -a Makefile
+	./Build/rf32.fsmod -f ../BootFox32/Floppy.img -a ../BootFox32/Kernel.kernel 
