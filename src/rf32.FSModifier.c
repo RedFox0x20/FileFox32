@@ -24,7 +24,7 @@ unsigned int	FSRootByteStart;
 
 void PrintSector(void *Data)
 {
-	for (int i = 0; i < 512; i++)
+	for (int i = 0; i < SECTOR_SIZE; i++)
 	{
 		printf("0x%02X ", ((char*)Data)[i] & 0xFF);
 	}
@@ -52,11 +52,11 @@ unsigned char LoadHeader(void)
 unsigned char LoadRoot(void)
 {
 	unsigned int Sector = 
-		(Header.FSRootCylinder * 18)
+		(Header.FSRootCylinder * SECTORS_PER_CYLINDER)
 		+ Header.FSRootSector - 1;
 
 	printf("Root sector = %i\n", Sector+1);
-	unsigned int SectorByte = Sector * 512;
+	unsigned int SectorByte = Sector * SECTOR_SIZE;
 
 	fseek(DriveFile, SectorByte, SEEK_SET);
 	int ReadResult = fread((void*)&Root, sizeof(FSROOT), 1, DriveFile);
@@ -81,10 +81,10 @@ unsigned char IsFreeSector(unsigned short Sector)
 	unsigned short SectorByte = Sector / 8;
 	unsigned char SectorBit = 1 << (7-(Sector % 8));
 	/*printf("Sector byte = %i\nSector bit = " BYTE_TO_BINARY_FMT "\n"
-			"Group byte = " BYTE_TO_BINARY_FMT "\n",
-			SectorByte,
-			BYTE_TO_BINARY(SectorBit),
-			BYTE_TO_BINARY(Root.Map.SectorGroup[SectorByte]));*/
+	  "Group byte = " BYTE_TO_BINARY_FMT "\n",
+	  SectorByte,
+	  BYTE_TO_BINARY(SectorBit),
+	  BYTE_TO_BINARY(Root.Map.SectorGroup[SectorByte]));*/
 	return (Root.Map.SectorGroup[SectorByte] & SectorBit) != 0 ? 0 : 1;
 }
 
@@ -144,8 +144,12 @@ unsigned char AddFileEntry(FILE_ENTRY Entry)
 		return 1;
 	}
 
-	memcpy((char*)(Root.Root.Entries) + (EntryID*15), &Entry, sizeof(FILE_ENTRY));
-	
+	memcpy(
+			(char*)(Root.Root.Entries) + (EntryID*sizeof(FILE_ENTRY)),
+			&Entry,
+			sizeof(FILE_ENTRY)
+		  );
+
 	return 0;
 }
 
@@ -165,14 +169,14 @@ void SetSectorState(unsigned short Sector, unsigned char State)
 
 unsigned char WriteSectorMap(void)
 {
-	unsigned int x = 
-		((Header.FSRootCylinder * 18) + (Header.FSRootSector - 1))
-		* SECTOR_SIZE;
-	printf("Writing sector map at %i\n", x);
+	unsigned int DestByte = ((Header.FSRootCylinder * SECTORS_PER_CYLINDER)
+			+ (Header.FSRootSector - 1)) * SECTOR_SIZE;
+
+	printf("Writing sector map at %i\n", DestByte);
 	PrintSector(&(Root.Map));
 	fseek(
 			DriveFile,
-			x,
+			DestByte,
 			SEEK_SET
 		 );
 	if (!fwrite(&(Root.Map), sizeof(SECTOR_MAP), 1, DriveFile))
@@ -185,15 +189,14 @@ unsigned char WriteSectorMap(void)
 
 unsigned char WriteRoot(void)
 {
-	unsigned int x = 
-		((Header.FSRootCylinder * 18) + (Header.FSRootSector))
-		* SECTOR_SIZE;
+	unsigned int DestByte = ((Header.FSRootCylinder * SECTORS_PER_CYLINDER)
+			+ (Header.FSRootSector)) * SECTOR_SIZE;
 
-	printf("Writing root sector map at %i\n", x);
+	printf("Writing root sector map at %i\n", DestByte);
 	PrintSector(&(Root.Root));
 	fseek(
 			DriveFile,
-			x,
+			DestByte,
 			SEEK_SET
 		 );
 	if (!fwrite(&(Root.Root), sizeof(DIRECTORY_ENTRY), 1, DriveFile))
@@ -329,11 +332,16 @@ int main(int argc, char **argv)
 									Entry.EndSector,
 									Entry.Flags);
 
-							for (unsigned short i = StartSector; i < EndSector; i++)
+							for (
+									unsigned short i = StartSector;
+									i < EndSector;
+									i++)
 							{
 								SetSectorState(i, 1);
 							}
+							printf("\n");
 							WriteSectorMap();
+							printf("\n");
 							WriteRoot();
 						}
 						fclose(ReadFile);
