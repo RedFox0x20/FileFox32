@@ -5,6 +5,7 @@
 #define FILE_NAME_LENGTH 10
 #define SECTOR_MAP_NUM_GROUPS 360
 #define SECTOR_SIZE 512
+#define NUM_SECTORS 2880
 
 #pragma pack(1)
 

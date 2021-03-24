@@ -20,6 +20,7 @@ FSROOT			Root;
 DIRECTORY_ENTRY	Dir;
 FILE 			*DriveFile,
 				*ReadFile;
+unsigned int	FSRootByteStart;
 
 void PrintSector(void *Data)
 {
@@ -56,6 +57,7 @@ unsigned char LoadRoot(void)
 
 	printf("Root sector = %i\n", Sector+1);
 	unsigned int SectorByte = Sector * 512;
+	FSRootByteStart = SectorByte;
 
 	fseek(DriveFile, SectorByte, SEEK_SET);
 	int ReadResult = fread((void*)&Root, sizeof(FSROOT), 1, DriveFile);
@@ -75,12 +77,131 @@ unsigned char LoadRoot(void)
 	return 0;
 }
 
+unsigned char IsFreeSector(unsigned short Sector)
+{
+	unsigned short SectorByte = Sector / 8;
+	unsigned char SectorBit = 1 << (7-(Sector % 8));
+	/*printf("Sector byte = %i\nSector bit = " BYTE_TO_BINARY_FMT "\n"
+			"Group byte = " BYTE_TO_BINARY_FMT "\n",
+			SectorByte,
+			BYTE_TO_BINARY(SectorBit),
+			BYTE_TO_BINARY(Root.Map.SectorGroup[SectorByte]));*/
+	return (Root.Map.SectorGroup[SectorByte] & SectorBit) != 0 ? 0 : 1;
+}
+
+unsigned short FindFreeSector(unsigned short SearchOffset)
+{
+	/* Efficiency can be improved by a factor of 8 but not necessary currently
+	 */
+	for (short i = SearchOffset; i < NUM_SECTORS; i++)
+	{
+		if (IsFreeSector(i))
+		{
+			return i;
+		}
+	}
+	return 0;
+}
+
+unsigned short FindFreeSectorGroup(
+		unsigned short SearchOffset,
+		unsigned short Length)
+{
+	unsigned short i;
+	unsigned char Valid = 0;
+	for (i = SearchOffset; i < NUM_SECTORS - Length && !Valid; i++)
+	{
+		Valid = 1;
+		for (unsigned short j = i; j <= i+Length; j++)
+		{
+			/*printf("Testing sector %i\n", j); */
+			if (!IsFreeSector(j))
+			{
+				/*printf("Result = %i\n", IsFreeSector(j));*/
+				i=j;
+				Valid = 0;
+			}
+		}
+	}
+	return (i + Length > NUM_SECTORS) ? 0 : i;
+}
+
+unsigned char AddFileEntry(FILE_ENTRY Entry)
+{
+	int EntryID;
+	for (EntryID = 0; EntryID < FILE_ENTRIES_PER_ROOT; EntryID++)
+	{
+		if (Root.Root.Entries[EntryID].Flags == 0)
+		{
+			break;
+		}
+	}
+
+	if (EntryID == 0)
+	{
+		printf("Failed to add file entry!\n");
+		return 1;
+	}
+
+	memcpy(&(Root.Root.Entries[EntryID]), &Entry, sizeof(FILE_ENTRY));
+	fseek(DriveFile, FSRootByteStart, SEEK_SET);
+	fwrite(&Entry, sizeof(FILE_ENTRY), 1, DriveFile);
+
+	return 0;
+}
+
+void SetSectorState(unsigned short Sector, unsigned char State)
+{
+	printf("Setting sector %i to state %i\n", Sector, State);
+	unsigned int SectorByte = Sector / 8;
+	unsigned char SectorBit = 1 << (7 - (Sector % 8));
+	if (State)
+	{
+		Root.Map.SectorGroup[SectorByte] |= SectorBit;
+	}
+	else
+	{
+		Root.Map.SectorGroup[SectorByte] &= ~SectorBit;
+	}
+}
+
+unsigned char WriteSectorMap(void)
+{
+	fseek(
+			DriveFile,
+			((Header.FSRootCylinder * 18) + (Header.FSRootSector - 1)) * SECTOR_SIZE,
+			SEEK_SET
+		 );
+	if (!fwrite(&(Root.Map), sizeof(SECTOR_MAP), 1, DriveFile))
+	{
+		printf("Failed to write sector map! Disk data is now incorrect!\n");
+		return 1;
+	}
+	return 0;
+}
+
+unsigned char WriteRoot(void)
+{
+	fseek(
+			DriveFile,
+			((Header.FSRootCylinder * 18) + (Header.FSRootSector)) * SECTOR_SIZE,
+			SEEK_SET
+		 );
+	if (!fwrite(&(Root.Root), sizeof(DIRECTORY_ENTRY), 1, DriveFile))
+	{
+		printf("Failed to write root! Disk data is now incorrect!\n");
+		return 1;
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	ReadFile = NULL;
 	DriveFile = NULL;
 	int opt;
 	printf(
+			"DEBUG INFO:\n"
 			"sizeof(FSHEADER) = %i\n"
 			"sizeof(FILE_ENTRY) = %i\n"
 			"sizeof(SECTOR_MAP) = %i\n"
@@ -137,6 +258,76 @@ int main(int argc, char **argv)
 				else
 				{
 					/* Read a file and write it to the DriveFile */
+					printf("\nOpening file to add: %s\n", optarg);
+					ReadFile = fopen(optarg, "rb");
+					if (ReadFile == NULL)
+					{
+						printf("Failed to open file! Skipping\n");
+					}
+					else
+					{
+						unsigned int FileLength;
+						fseek(ReadFile, 0, SEEK_END);
+						FileLength = ftell(ReadFile);
+						fseek(ReadFile, 0, SEEK_SET);
+
+						unsigned int SectorsRequired = 
+							(FileLength / SECTOR_SIZE) + 
+							((FileLength % SECTOR_SIZE) ? 1 : 0);
+
+						unsigned short StartSector = 
+							FindFreeSectorGroup(0, SectorsRequired);
+						if (StartSector == 0)
+						{
+							printf("Failed to find a valid sector group!\n");
+						}
+						else
+						{
+
+							unsigned short EndSector = 
+								StartSector + SectorsRequired;
+
+							unsigned int SectorByte = StartSector * SECTOR_SIZE;
+							fseek(DriveFile, SectorByte, SEEK_SET);
+
+							printf("Loading/Writing file!\n");
+							unsigned char c;
+							for (int i = 0; i < FileLength; i++)
+							{
+								c = getc(ReadFile);
+								while ((fputc(c, DriveFile)) != c) ;
+							}
+
+							FILE_ENTRY Entry;
+							Entry.Flags = 0b00001100;
+							memcpy(&(Entry.Name), "TEST_ENTRY", 10);
+							Entry.StartSector = StartSector;
+							Entry.EndSector = EndSector;
+							AddFileEntry(Entry);
+
+							printf(
+									"File info:\n"
+									"Name: %c%c%c%c%c%c%c%c%c%c\n"
+									"Start: %i\n"
+									"End: %i\n"
+									"Flags: %i\n",
+									'T', 'E', 'S', 'T', '_', 'E', 'N', 'T', 'R',
+									'Y',
+									Entry.StartSector,
+									Entry.EndSector,
+									Entry.Flags);
+
+							for (unsigned short i = StartSector; i <= EndSector; i++)
+							{
+								SetSectorState(i, 1);
+							}
+							WriteSectorMap();
+							WriteRoot();
+						}
+						fclose(ReadFile);
+						ReadFile = NULL;
+						printf("Finished!\n");
+					}
 				}
 				break;
 			case 'd':
