@@ -21,23 +21,38 @@ DIRECTORY_ENTRY	Dir;
 FILE 			*DriveFile,
 				*ReadFile;
 unsigned int	FSRootByteStart;
+unsigned char	Verbose;
+
+#define VERBOSE_ONLY if (Verbose)
 
 void PrintSector(void *Data)
 {
-	for (int i = 0; i < SECTOR_SIZE; i++)
+	VERBOSE_ONLY
 	{
-		printf("0x%02X ", ((char*)Data)[i] & 0xFF);
+		for (int i = 0; i < SECTOR_SIZE; i++)
+		{
+			printf("0x%02X ", ((char*)Data)[i] & 0xFF);
+		}
+		printf("\n");
 	}
-	printf("\n");
 }
 
 unsigned char LoadHeader(void)
 {
-	fseek(DriveFile, 0, SEEK_SET);
+	if (fseek(DriveFile, 0, SEEK_SET) != 0)
+	{
+		printf("Failed to seek to header location!\n");
+		return 1;
+	}
 	int ReadResult = fread((void*)&Header, sizeof(FSHEADER), 1, DriveFile);
-	printf("Header Read result = %i\n", ReadResult);
-	printf("Header bytes\n");
-	PrintSector(&Header);
+
+
+	VERBOSE_ONLY
+	{
+		printf("Header Read result = %i\n", ReadResult);
+		printf("Header bytes\n");
+		PrintSector(&Header);
+	}
 
 	if (!ReadResult)
 	{
@@ -55,18 +70,26 @@ unsigned char LoadRoot(void)
 		(Header.FSRootCylinder * SECTORS_PER_CYLINDER)
 		+ Header.FSRootSector - 1;
 
-	printf("Root sector = %i\n", Sector+1);
 	unsigned int SectorByte = Sector * SECTOR_SIZE;
 
-	fseek(DriveFile, SectorByte, SEEK_SET);
+	if (fseek(DriveFile, SectorByte, SEEK_SET) != 0)
+	{
+		printf("Failed to seek when loading root!\n");
+		return 1;
+	}
 	int ReadResult = fread((void*)&Root, sizeof(FSROOT), 1, DriveFile);
-	printf("Root Read Result = %i\n", ReadResult);
+	
+	VERBOSE_ONLY
+	{
+		printf("Root sector = %i\n", Sector+1);
+		printf("Root Read Result = %i\n", ReadResult);
 
-	printf("Sector map bytes:\n");
-	PrintSector(&(Root.Map));
+		printf("Sector map bytes:\n");
+		PrintSector(&(Root.Map));
 
-	printf("\nRoot bytes:\n");
-	PrintSector(&(Root.Root));
+		printf("\nRoot bytes:\n");
+		PrintSector(&(Root.Root));
+	}
 
 	if (!ReadResult)
 	{
@@ -80,11 +103,6 @@ unsigned char IsFreeSector(unsigned short Sector)
 {
 	unsigned short SectorByte = Sector / 8;
 	unsigned char SectorBit = 1 << (7-(Sector % 8));
-	/*printf("Sector byte = %i\nSector bit = " BYTE_TO_BINARY_FMT "\n"
-	  "Group byte = " BYTE_TO_BINARY_FMT "\n",
-	  SectorByte,
-	  BYTE_TO_BINARY(SectorBit),
-	  BYTE_TO_BINARY(Root.Map.SectorGroup[SectorByte]));*/
 	return (Root.Map.SectorGroup[SectorByte] & SectorBit) != 0 ? 0 : 1;
 }
 
@@ -113,10 +131,8 @@ unsigned short FindFreeSectorGroup(
 		Valid = 1;
 		for (unsigned short j = i; j < i+Length; j++)
 		{
-			/*printf("Testing sector %i\n", j); */
 			if (!IsFreeSector(j))
 			{
-				/*printf("Result = %i\n", IsFreeSector(j));*/
 				i=j;
 				Valid = 0;
 			}
@@ -172,16 +188,19 @@ unsigned char WriteSectorMap(void)
 	unsigned int DestByte = ((Header.FSRootCylinder * SECTORS_PER_CYLINDER)
 			+ (Header.FSRootSector - 1)) * SECTOR_SIZE;
 
-	printf("Writing sector map at %i\n", DestByte);
-	PrintSector(&(Root.Map));
-	fseek(
-			DriveFile,
-			DestByte,
-			SEEK_SET
-		 );
+	VERBOSE_ONLY
+	{
+		printf("Writing sector map at %i\n", DestByte);
+		PrintSector(&(Root.Map));
+	}
+	
+	if (fseek(DriveFile, DestByte, SEEK_SET) != 0)
+	{
+		printf("Failed to seek to %i on the drive!\n");
+		return 1;
+	}
 	if (!fwrite(&(Root.Map), sizeof(SECTOR_MAP), 1, DriveFile))
 	{
-		printf("Failed to write sector map! Disk data is now incorrect!\n");
 		return 1;
 	}
 	return 0;
@@ -192,16 +211,20 @@ unsigned char WriteRoot(void)
 	unsigned int DestByte = ((Header.FSRootCylinder * SECTORS_PER_CYLINDER)
 			+ (Header.FSRootSector)) * SECTOR_SIZE;
 
-	printf("Writing root sector map at %i\n", DestByte);
-	PrintSector(&(Root.Root));
-	fseek(
-			DriveFile,
-			DestByte,
-			SEEK_SET
-		 );
+	VERBOSE_ONLY
+	{
+		printf("Writing root sector map at %i\n", DestByte);
+		PrintSector(&(Root.Root));
+	}
+
+	if (fseek(DriveFile, DestByte, SEEK_SET) != 0)
+	{
+		printf("Failed to seek to %i on the drive!\n");
+		return 1;
+	}
 	if (!fwrite(&(Root.Root), sizeof(DIRECTORY_ENTRY), 1, DriveFile))
 	{
-		printf("Failed to write root! Disk data is now incorrect!\n");
+		printf("Failed to write root! Disk data may now incorrect!\n");
 		return 1;
 	}
 	return 0;
@@ -211,8 +234,12 @@ int main(int argc, char **argv)
 {
 	ReadFile = NULL;
 	DriveFile = NULL;
+	Verbose = 0;
+	FSRootByteStart = 0;
+
 	int opt;
-	printf(
+	
+	VERBOSE_ONLY printf(
 			"DEBUG INFO:\n"
 			"sizeof(FSHEADER) = %i\n"
 			"sizeof(FILE_ENTRY) = %i\n"
@@ -226,7 +253,7 @@ int main(int argc, char **argv)
 			sizeof(FSROOT)
 		  );
 
-	while ((opt = getopt(argc, argv, "f:a:d:")) != -1)
+	while ((opt = getopt(argc, argv, "vVf:a:d:")) != -1)
 	{
 		switch (opt)
 		{
@@ -279,9 +306,22 @@ int main(int argc, char **argv)
 					else
 					{
 						unsigned int FileLength;
-						fseek(ReadFile, 0, SEEK_END);
+						if (fseek(ReadFile, 0, SEEK_END) != 0)
+						{
+							printf("Failed to seek file!");
+							break;
+						}
 						FileLength = ftell(ReadFile);
-						fseek(ReadFile, 0, SEEK_SET);
+						if (FileLength == -1)
+						{
+							printf("Failed to ftell!\n");
+							break;
+						}
+						if (fseek(ReadFile, 0, SEEK_SET) != 0)
+						{
+							printf("Failed to seek file!");
+							break;
+						}
 
 						unsigned int SectorsRequired = 
 							(FileLength / SECTOR_SIZE) + 
@@ -300,7 +340,11 @@ int main(int argc, char **argv)
 								StartSector + SectorsRequired;
 
 							unsigned int SectorByte = StartSector * SECTOR_SIZE;
-							fseek(DriveFile, SectorByte, SEEK_SET);
+							if (fseek(DriveFile, SectorByte, SEEK_SET) != 0)
+							{
+								printf("Failed to seek file!");
+								break;
+							}
 
 							printf("Loading/Writing file!\n");
 							unsigned char c;
@@ -318,16 +362,13 @@ int main(int argc, char **argv)
 							Entry.EndSector = EndSector;
 							AddFileEntry(Entry);
 
-							printf(
+							VERBOSE_ONLY printf(
 									"File info:\n"
-									"Name: %c%c%c%c%c%c%c%c%c%c\n"
+									"Name: " NAME_PRINT_FMT "\n"
 									"Start: %i\n"
 									"End: %i\n"
 									"Flags: %i\n",
-									Entry.Name[0], Entry.Name[1], Entry.Name[2],
-									Entry.Name[3], Entry.Name[4], Entry.Name[5],
-									Entry.Name[6], Entry.Name[7], Entry.Name[8],
-									Entry.Name[9],
+									NAME_PRINT_VAR(Entry),
 									Entry.StartSector,
 									Entry.EndSector,
 									Entry.Flags);
@@ -339,10 +380,23 @@ int main(int argc, char **argv)
 							{
 								SetSectorState(i, 1);
 							}
+
 							printf("\n");
-							WriteSectorMap();
+							if (WriteRoot())
+							{
+								printf(
+										"Failed to write FSRoot! "
+										"Disk data may now incorrect!\n");
+							}
+
 							printf("\n");
-							WriteRoot();
+							if (WriteSectorMap())
+							{
+								printf(
+										"Failed to write sector map! "
+										"Disk data may now incorrect!\n");
+							}
+
 						}
 						fclose(ReadFile);
 						ReadFile = NULL;
@@ -376,13 +430,28 @@ int main(int argc, char **argv)
 							}
 							memset(Entry, 0, sizeof(FILE_ENTRY));
 							printf("\n");
-							WriteSectorMap();
+							if (WriteRoot())
+							{
+								printf(
+										"Failed to write FSRoot! "
+										"Disk data may now incorrect!\n");
+							}
+
 							printf("\n");
-							WriteRoot();
+							if (WriteSectorMap())
+							{
+								printf(
+										"Failed to write sector map! "
+										"Disk data may now incorrect!\n");
+							}
 							break;
 						}
 					}
 				}
+				break;
+			case 'V':
+			case 'v':
+				Verbose = 1;
 				break;
 			default:
 				printf("Ingnoring unexpected argument: %c - %s\n", opt, optarg);

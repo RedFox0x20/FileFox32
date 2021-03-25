@@ -8,6 +8,14 @@
 #define SECTOR_SIZE 512
 #define NUM_SECTORS 2880
 
+#define NAME_PRINT_FMT "%c%c%c%c%c%c%c%c%c%c"
+#define NAME_PRINT_VAR(Entry) \
+	Entry.Name[0], Entry.Name[1], \
+	Entry.Name[2], Entry.Name[3], \
+	Entry.Name[4], Entry.Name[5], \
+	Entry.Name[6], Entry.Name[7], \
+	Entry.Name[8], Entry.Name[9] \
+
 #pragma pack(1)
 
 typedef struct FSHEADER
