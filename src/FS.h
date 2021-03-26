@@ -1,5 +1,5 @@
-#ifndef RF_STRUCTS
-#define RF_STRUCTS
+#ifndef RF_FS_H 
+#define RF_FS_H 
 
 #define FILE_ENTRIES_PER_ROOT 34
 #define FILE_NAME_LENGTH 10
@@ -16,11 +16,14 @@
 	Entry.Name[6], Entry.Name[7], \
 	Entry.Name[8], Entry.Name[9] \
 
-#pragma pack(1)
+/* Force alignment to 1 byte */
+#pragma pack(push, 1)
+/* Ignore warnings for unused attributes */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wattributes"
 
 typedef struct FSHEADER
 {
-	unsigned char jmp[3];
 	unsigned char Magic[2];
 	unsigned char BootFlag;
 	unsigned char DiskName[8];
@@ -34,11 +37,15 @@ typedef struct FSHEADER
 	unsigned char FSRootSector;
 	unsigned char FSRootHead;
 	unsigned char FSRootTableMapLength; /* remove */
-	/* MISC */
-	unsigned char BootCode[SECTOR_SIZE-25];
-	unsigned char BootSignature[2];
 } FSHEADER __attribute__((packed));
 
+typedef struct BOOT_SECTOR
+{
+	unsigned char jmp[3];
+	FSHEADER Header;
+	unsigned char BootCode[SECTOR_SIZE-sizeof(FSHEADER)-3];
+	unsigned char BootSignature[2];
+} BOOT_SECTOR __attribute__((packed));
 
 typedef struct FILE_ENTRY
 {
@@ -66,6 +73,22 @@ typedef struct FSROOT
 {
 	SECTOR_MAP Map;
 	DIRECTORY_ENTRY Root;
-} FSROOT;
+} FSROOT __attribute__((packed));
 
+void PrintSector(void *Data);
+unsigned char LoadBootSector(FILE *DriveFile, BOOT_SECTOR *Boot);
+unsigned char LoadRoot(FILE *DriveFile, FSHEADER *Header, FSROOT *Root);
+unsigned char IsFreeSector(FSROOT *Root, unsigned short Sector);
+unsigned short FindFreeSector(FSROOT *Root, unsigned short SearchOffset);
+unsigned short FindFreeSectorGroup(
+		FSROOT *Root,
+		unsigned short SearchOffset,
+		unsigned short Length);
+unsigned char AddFileEntry(FSROOT *Root, FILE_ENTRY Entry);
+void SetSectorState(FSROOT *Root, unsigned short Sector, unsigned char State);
+unsigned char WriteSectorMap(FSROOT *Root, FSHEADER *Header, FILE *DriveFile);
+unsigned char WriteRoot(FSROOT *Root, FSHEADER *Header, FILE *DriveFile);
+
+#pragma GCC diagnostic pop
+#pragma pack(pop)
 #endif

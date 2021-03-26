@@ -5,7 +5,7 @@
 all: rf32.fsmod 
 
 rf32.fsmod: 
-	gcc src/rf32.FSModifier.c -o Build/rf32.fsmod $(CCFLAGS)
+	gcc src/rf32.FSModifier.c src/FS.c -o Build/rf32.fsmod $(CCFLAGS)
 
 test: rf32.fsmod
 	sh -c "cd ../BootFox32/ && make"
