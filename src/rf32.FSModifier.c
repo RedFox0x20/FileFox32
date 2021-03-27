@@ -52,10 +52,21 @@ int main(int argc, char **argv)
 
 
 
-	while ((opt = getopt(argc, argv, "vVf:a:p:d:r:")) != -1)
+	/* v|V	: Verbose mode
+	 * a	: Add a file
+	 * o	: The path that the adding file should be put
+	 * d	: Create a directory
+	 * r	: remove a file/directory
+	 */
+	while ((opt = getopt(argc, argv, "vVf:a:o:d:r:l")) != -1)
 	{
+		int Index = -1;
 		switch (opt)
 		{
+			case 'l':
+				/* List all files */
+				break;
+
 			case 'f':
 				if (DriveFile != NULL)
 				{
@@ -88,6 +99,7 @@ int main(int argc, char **argv)
 					}
 				}
 				break;
+
 			case 'a':
 				FilesToWrite.NumFiles++;
 				FilesToWrite.Files = 
@@ -96,22 +108,22 @@ int main(int argc, char **argv)
 							FilesToWrite.Files,
 							sizeof(struct FileInfo) * FilesToWrite.NumFiles);
 
-				int Index = FilesToWrite.NumFiles-1;
+				Index = FilesToWrite.NumFiles-1;
 				FilesToWrite.Files[Index].FilePath =
 					(char*)malloc(strlen(optarg)+1);
 				strcpy(FilesToWrite.Files[Index].FilePath, optarg);
 				FilesToWrite.Files[Index].OutputPath = NULL;
 				break;
-			case 'd':
-				/* Create the directory path given */
-			case 'p':
+
+
+			case 'o':
 				if (FilesToWrite.NumFiles == 0)
 				{
-					printf("-p expects a file to be added with -a before use!\n");
+					printf("-o expects a file to be added with -a before use!\n");
 					break;
 				}
-				if (FilesToWrite.Files[FilesToWrite.NumFiles-1].OutputPath !=
-						NULL)
+				if (FilesToWrite.Files[FilesToWrite.NumFiles-1].OutputPath
+						!= NULL)
 				{
 					printf("Output path for an input file can only be given once!\n");
 					break;
@@ -122,76 +134,53 @@ int main(int argc, char **argv)
 						FilesToWrite.Files[FilesToWrite.NumFiles-1].OutputPath,
 						optarg);
 				break;
-			case 'r':
-				if (DriveFile == NULL)
-				{
-					printf("Ignoring delete file, no drive opened!\n");
-				}
-				else
-				{
-					/* Detect if a file of the same name exists */
-					for (
-							int EntryID = 0;
-							EntryID < FILE_ENTRIES_PER_ROOT;
-							EntryID++)
-					{
-						FILE_ENTRY *Entry = &(Root.Root.Entries[EntryID]);
-						if (strncmp(optarg, Entry->Name, 10))
-						{
-							printf("File %s found, deleting!\n", optarg);
-							for (
-									unsigned int i = Entry->StartSector;
-									i < Entry->EndSector;
-									i++	)
-							{
-								SetSectorState(&Root, i, 0);
-							}
-							memset(Entry, 0, sizeof(FILE_ENTRY));
-							printf("\n");
-							if (WriteRoot(&Root, &Boot.Header, DriveFile))
-							{
-								printf(
-										"Failed to write FSRoot! "
-										"Disk data may now incorrect!\n");
-							}
 
-							printf("\n");
-							if (WriteSectorMap(&Root, &Boot.Header, DriveFile))
-							{
-								printf(
-										"Failed to write sector map! "
-										"Disk data may now incorrect!\n");
-							}
-							break;
-						}
-					}
-				}
+			case 'd':
+				/* Create the directory path given */
 				break;
+
+			case 'r':
+				FilesToRemove.NumFiles++;
+				FilesToRemove.Files = 
+					(char**)realloc(
+							FilesToRemove.Files,
+							sizeof(char*) * FilesToRemove.NumFiles);
+
+				Index = FilesToRemove.NumFiles-1;
+				FilesToRemove.Files[Index] = malloc(strlen(optarg)+1);
+				strcpy(FilesToRemove.Files[Index], optarg);
+
+				break;
+
 			case 'V':
 			case 'v':
 				Verbose = 1;
 				break;
+
 			default:
 				printf("Ingnoring unexpected argument: %c - %s\n", opt, optarg);
 				break;
 		}
 	}
-	printf(
-			"DEBUG INFO:\n"
-			"sizeof(BOOT_SECTOR) = %i\n"
-			"sizeof(FSHEADER) = %i\n"
-			"sizeof(FILE_ENTRY) = %i\n"
-			"sizeof(SECTOR_MAP) = %i\n"
-			"sizeof(DIRECTORY_ENTRY) = %i\n"
-			"sizeof(FSROOT) = %i\n\n",
-			sizeof(BOOT_SECTOR),
-			sizeof(FSHEADER),
-			sizeof(FILE_ENTRY),
-			sizeof(SECTOR_MAP),
-			sizeof(DIRECTORY_ENTRY),
-			sizeof(FSROOT)
-		  );
 
+	VERBOSE_ONLY
+	{
+		printf(
+				"DEBUG INFO:\n"
+				"sizeof(BOOT_SECTOR) = %i\n"
+				"sizeof(FSHEADER) = %i\n"
+				"sizeof(FILE_ENTRY) = %i\n"
+				"sizeof(SECTOR_MAP) = %i\n"
+				"sizeof(DIRECTORY_ENTRY) = %i\n"
+				"sizeof(FSROOT) = %i\n\n",
+				sizeof(BOOT_SECTOR),
+				sizeof(FSHEADER),
+				sizeof(FILE_ENTRY),
+				sizeof(SECTOR_MAP),
+				sizeof(DIRECTORY_ENTRY),
+				sizeof(FSROOT)
+			  );
+	}
 	if (DriveFile == NULL) { goto Main_Exit; }
 
 	/* Read a file and write it to the DriveFile */
@@ -310,9 +299,55 @@ int main(int argc, char **argv)
 		{
 			printf("No output path provided! Skipping file %s\n", FI.FilePath);
 		}
+
+
 		free(FI.FilePath);
 		free(FI.OutputPath);
 	}
+
+	/* Files to remove */
+	for (unsigned int i = 0; i < FilesToRemove.NumFiles; i++)
+	{
+		char *RemoveFileName = FilesToRemove.Files[i];
+		/* Detect if a file of the same name exists */
+		for (
+				int EntryID = 0;
+				EntryID < FILE_ENTRIES_PER_ROOT;
+				EntryID++)
+		{
+			FILE_ENTRY *Entry = &(Root.Root.Entries[EntryID]);
+			if (strncmp(RemoveFileName, Entry->Name, 10))
+			{
+				printf("File %s found, deleting!\n", RemoveFileName);
+				for (
+						unsigned int i = Entry->StartSector;
+						i < Entry->EndSector;
+						i++	)
+				{
+					SetSectorState(&Root, i, 0);
+				}
+				memset(Entry, 0, sizeof(FILE_ENTRY));
+				printf("\n");
+				if (WriteRoot(&Root, &Boot.Header, DriveFile))
+				{
+					printf(
+							"Failed to write FSRoot! "
+							"Disk data may now incorrect!\n");
+				}
+
+				printf("\n");
+				if (WriteSectorMap(&Root, &Boot.Header, DriveFile))
+				{
+					printf(
+							"Failed to write sector map! "
+							"Disk data may now incorrect!\n");
+				}
+				break;
+			}
+		}
+		free(RemoveFileName);
+	}
+	free(FilesToRemove.Files);
 
 	/* Main exit label used for safety of malloc()ed memory */
 Main_Exit:
